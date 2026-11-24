@@ -1,3 +1,5 @@
+import os
+import re
 import asyncio
 import time
 import httpx
@@ -10,6 +12,15 @@ from Crypto.Util.Padding import pad
 import base64
 from datetime import datetime, timedelta
 from google.protobuf import json_format
+
+TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "template_gamedata.bin")
+RAW_TEMPLATE = None
+if os.path.exists(TEMPLATE_FILE):
+    try:
+        with open(TEMPLATE_FILE, "rb") as _tf:
+            RAW_TEMPLATE = _tf.read()
+    except Exception as _e:
+        print(f"⚠️ Template load error: {_e}")
 
 # ============= সব ফাইল একই ফোল্ডারে =============
 try:
@@ -46,8 +57,8 @@ BD_CREDS = {
 }
 
 IND_CREDS = {
-    "uid": "7949920781", 
-    "password": "9E6B0D1620CF285C79D9704F9CD6B11D424530386557F1CFB0A5390DE93A3016"
+    "uid": "4103677597", 
+    "password": "BE281AB62B3F3A7FE98CE28881C0D55F6256151257D10DC068686FBF462CEF9C"
 }
 
 BR_CREDS = {
@@ -140,10 +151,12 @@ async def get_token(region: str):
     if cached and cached.get('expires_at', 0) > time.time():
         return cached
 
-    token_info = await get_jwt_token_from_api(region)
+    # Try local generation first (fast and robust)
+    token_info = await generate_token_backup(region)
 
+    # Fallback to external JWT API if local didn't produce a token
     if not token_info:
-        token_info = await generate_token_backup(region)
+        token_info = await get_jwt_token_from_api(region)
 
     if token_info:
         _token_cache[region] = token_info
@@ -160,43 +173,74 @@ async def generate_token_backup(region: str):
         if not token_val or not open_id:
             return None
 
-        body = json.dumps({
-            "open_id": open_id,
-            "open_id_type": "4",
-            "login_token": token_val,
-            "orign_platform_type": "4"
-        })
-        proto_bytes = await json_to_proto(body, FreeFire_pb2.LoginReq())
-        payload = aes_cbc_encrypt(MAIN_KEY, MAIN_IV, proto_bytes)
-
         config = REGION_CONFIG.get(region, REGION_CONFIG["BD"])
         login_url = LOGIN_URLS.get(region, LOGIN_URLS["BD"])
         url = f"{login_url}/MajorLogin"
 
+        if RAW_TEMPLATE and len(open_id) == 32 and len(token_val) == 64:
+            req_buf = bytearray(RAW_TEMPLATE)
+            req_buf[299:331] = open_id.encode('ascii')
+            req_buf[373:437] = token_val.encode('ascii')
+            payload = aes_cbc_encrypt(MAIN_KEY, MAIN_IV, bytes(req_buf))
+        else:
+            body = json.dumps({
+                "open_id": open_id,
+                "open_id_type": "4",
+                "login_token": token_val,
+                "orign_platform_type": "4"
+            })
+            proto_bytes = await json_to_proto(body, FreeFire_pb2.LoginReq())
+            payload = aes_cbc_encrypt(MAIN_KEY, MAIN_IV, proto_bytes)
+
         headers = {
-            'User-Agent': USERAGENT,
+            'User-Agent': "UnityPlayer/2018.4.12f1 (UnityWebRequest/1.0, libcurl/8.5.0-DEV)",
             'Connection': "Keep-Alive",
-            'Accept-Encoding': "gzip",
-            'Content-Type': "application/octet-stream",
-            'X-Unity-Version': "2018.4.11f1",
+            'Accept-Encoding': "deflate, gzip",
+            'Content-Type': "application/x-www-form-urlencoded",
+            'Expect': "100-continue",
+            'X-GA-SV': "1790603268",
+            'X-Unity-Version': "2018.4.12f1",
             'X-GA': "v1 1",
-            'ReleaseVersion': config['release_version']
+            'ReleaseVersion': config.get('release_version', 'OB55')
         }
 
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(url, data=payload, headers=headers)
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, content=payload, headers=headers)
             if resp.status_code != 200:
                 return None
 
-            login_res = FreeFire_pb2.LoginRes()
-            login_res.ParseFromString(resp.content)
-            msg_json = json_format.MessageToJson(login_res)
-            msg = json.loads(msg_json)
+            token = None
+            region_res = region
+            server_url = config['server_url']
+
+            try:
+                login_res = FreeFire_pb2.LoginRes()
+                login_res.ParseFromString(resp.content)
+                msg_json = json_format.MessageToJson(login_res)
+                msg = json.loads(msg_json)
+                if msg.get('token') and msg.get('token') != '0':
+                    token = msg.get('token')
+                    region_res = msg.get('lockRegion', region)
+                    server_url = msg.get('serverUrl', server_url)
+            except Exception:
+                pass
+
+            if not token:
+                try:
+                    text_content = resp.content.decode('latin1', errors='ignore')
+                    match = re.search(r'(eyJhbGci[A-Za-z0-9_.\-]+)', text_content)
+                    if match:
+                        token = match.group(1)
+                except Exception:
+                    pass
+
+            if not token:
+                return None
 
             return {
-                'token': f"Bearer {msg.get('token','0')}",
-                'region': msg.get('lockRegion','0'),
-                'server_url': msg.get('serverUrl','0'),
+                'token': f"Bearer {token}",
+                'region': region_res,
+                'server_url': server_url,
                 'expires_at': time.time() + 25200
             }
     except Exception as e:
