@@ -322,7 +322,7 @@ async def GetAccountInformation(uid, region):
             return result
 
     except Exception as e:
-        return None
+        return {"exception": f"{type(e).__name__}: {str(e)}"}
 
 # =============================================
 # HELPER
@@ -398,7 +398,7 @@ def get_full_info():
             for coro in asyncio.as_completed(tasks, timeout=20):
                 try:
                     data = await coro
-                    if data and not data.get("error_status"):
+                    if data and not data.get("error_status") and not data.get("exception"):
                         # বাকি টাস্ক ক্যান্সেল
                         for t in tasks:
                             if not t.done():
@@ -534,9 +534,7 @@ def debug_test():
         
     try:
         data = asyncio.run(GetAccountInformation(int(uid), region))
-        logs['account_data'] = "Found" if data else "None (failed or empty)"
-        if data:
-            logs['details'] = data
+        logs['account_result'] = data
     except Exception as e:
         logs['account_error'] = str(e)
         
