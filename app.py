@@ -57,8 +57,8 @@ BD_CREDS = {
 }
 
 IND_CREDS = {
-    "uid": "4103677597", 
-    "password": "BE281AB62B3F3A7FE98CE28881C0D55F6256151257D10DC068686FBF462CEF9C"
+    "uid": "8497971943", 
+    "password": "676635C7151DD04A27A0096591F27E4BBE5CD8762878E8C55110C1D847EF4176"
 }
 
 BR_CREDS = {
@@ -78,7 +78,7 @@ ACCOUNT_CREDENTIALS = {
 
 REGION_CONFIG = {
     "BD": {"server_url": "https://clientbp.ppmainecoonghj.com", "release_version": "OB55"},
-    "IND": {"server_url": "https://client.ind.freefiremobile.com", "release_version": "OB55"},
+    "IND": {"server_url": "https://clientbp.freefireind.in", "release_version": "OB55"},
     "BR": {"server_url": "https://client.us.freefiremobile.com", "release_version": "OB55"}
 }
 
@@ -89,7 +89,7 @@ LOGIN_URLS = {
 }
 
 
-REGION_PRIORITY = ["BD", "IND", "BR"]
+REGION_PRIORITY = ["IND", "BD", "BR"]
 
 # === Flask App ===
 app = Flask(__name__)
@@ -303,7 +303,7 @@ async def GetAccountInformation(uid, region):
         }
 
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(server_url + '/GetPlayerPersonalShow', data=data_enc, headers=headers)
+            resp = await client.post(server_url.rstrip('/') + '/GetPlayerPersonalShow', content=data_enc, headers=headers)
 
             if resp.status_code != 200:
                 return None
