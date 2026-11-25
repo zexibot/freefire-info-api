@@ -515,6 +515,33 @@ def home():
         "credit": "@NAJMI_ADMIN_2"
     })
 
+@app.route('/debug')
+def debug_test():
+    region = request.args.get('region', 'IND')
+    uid = request.args.get('uid', '8497971943')
+    logs = {}
+    
+    token_info = asyncio.run(get_token(region))
+    if not token_info:
+        logs['token'] = "Failed to obtain token"
+    else:
+        logs['token'] = {
+            'has_token': True,
+            'region': token_info.get('region'),
+            'server_url': token_info.get('server_url'),
+            'token_preview': token_info.get('token')[:35] + '...'
+        }
+        
+    try:
+        data = asyncio.run(GetAccountInformation(int(uid), region))
+        logs['account_data'] = "Found" if data else "None (failed or empty)"
+        if data:
+            logs['details'] = data
+    except Exception as e:
+        logs['account_error'] = str(e)
+        
+    return jsonify(logs)
+
 @app.route('/status')
 def token_status():
     status = {}
