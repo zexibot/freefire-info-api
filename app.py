@@ -306,7 +306,7 @@ async def GetAccountInformation(uid, region):
             resp = await client.post(server_url.rstrip('/') + '/GetPlayerPersonalShow', content=data_enc, headers=headers)
 
             if resp.status_code != 200:
-                return None
+                return {"error_status": resp.status_code, "error_body": resp.text[:150]}
 
             account_info = AccountPersonalShow_pb2.AccountPersonalShowInfo()
             account_info.ParseFromString(resp.content)
@@ -398,7 +398,7 @@ def get_full_info():
             for coro in asyncio.as_completed(tasks, timeout=20):
                 try:
                     data = await coro
-                    if data:
+                    if data and not data.get("error_status"):
                         # বাকি টাস্ক ক্যান্সেল
                         for t in tasks:
                             if not t.done():
