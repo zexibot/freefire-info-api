@@ -415,17 +415,22 @@ def get_full_info():
         return jsonify({"error": "Invalid UID"}), 400
 
     async def try_all_regions_parallel():
-        """BD, IND, BR — FULL MADE BY @Jahid_x_Empire IF CHANGE ANY CREDIT == YOU ARE A GAY  ।"""
-        tasks = []
-        for region in REGION_PRIORITY:
-            tasks.append(asyncio.create_task(GetAccountInformation(uid_int, region)))
-        
+        # Check IND first for accurate Indian cluster data
         try:
-            for coro in asyncio.as_completed(tasks, timeout=20):
+            data = await GetAccountInformation(uid_int, "IND")
+            if data and not data.get("error_status") and not data.get("exception"):
+                return data
+        except Exception:
+            pass
+
+        remaining_regions = [r for r in REGION_PRIORITY if r != "IND"]
+        tasks = [asyncio.create_task(GetAccountInformation(uid_int, r)) for r in remaining_regions]
+
+        try:
+            for coro in asyncio.as_completed(tasks, timeout=15):
                 try:
                     data = await coro
                     if data and not data.get("error_status") and not data.get("exception"):
-                        # বাকি টাস্ক ক্যান্সেল
                         for t in tasks:
                             if not t.done():
                                 t.cancel()
@@ -434,7 +439,7 @@ def get_full_info():
                     continue
         except asyncio.TimeoutError:
             pass
-        
+
         for t in tasks:
             if not t.done():
                 t.cancel()
