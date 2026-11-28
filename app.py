@@ -225,14 +225,33 @@ async def generate_token_backup(region: str):
             except Exception:
                 pass
 
+            # Exact Protobuf binary token extraction (avoids trailing field tag bytes)
             if not token:
-                try:
-                    text_content = resp.content.decode('latin1', errors='ignore')
-                    match = re.search(r'(eyJhbGci[A-Za-z0-9_.\-]+)', text_content)
-                    if match:
-                        token = match.group(1)
-                except Exception:
-                    pass
+                jwt_idx = resp.content.find(b'eyJhbGci')
+                if jwt_idx != -1:
+                    token_len = None
+                    if jwt_idx >= 3 and resp.content[jwt_idx - 3] == 0x42:
+                        token_len = (resp.content[jwt_idx - 1] << 7) | (resp.content[jwt_idx - 2] & 0x7f)
+                    elif jwt_idx >= 2 and resp.content[jwt_idx - 2] == 0x42:
+                        token_len = resp.content[jwt_idx - 1]
+
+                    if token_len and token_len > 0 and jwt_idx + token_len <= len(resp.content):
+                        token = resp.content[jwt_idx : jwt_idx + token_len].decode('ascii', errors='ignore')
+                    else:
+                        match = re.search(r'(eyJhbGci[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+)', resp.content.decode('latin1', errors='ignore'))
+                        if match:
+                            token = match.group(1)
+
+            # Extract dynamic server_url if present
+            srv_idx = resp.content.find(b'https://client')
+            if srv_idx != -1:
+                srv_end = srv_idx
+                while srv_end < len(resp.content) and 32 < resp.content[srv_end] < 127:
+                    srv_end += 1
+                extracted_srv = resp.content[srv_idx:srv_end].decode('ascii', errors='ignore')
+                clean_srv = re.split(r'[^a-zA-Z0-9\.\-\:\/]', extracted_srv)[0]
+                if clean_srv.startswith('https://client'):
+                    server_url = clean_srv
 
             if not token:
                 return None
