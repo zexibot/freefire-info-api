@@ -48,22 +48,38 @@ MAIN_IV = b'6oyZDr22E3ychjM%'
 JWT_API_BASE = "https://najmiob55jwttokengen.vercel.app/token"   #JWT API BY JAHID X EMPIRE 
 
 # =============================================
+# API SECURITY & ENCRYPTION
+# =============================================
+
+API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "ff_sec_9a87d6e5c4b3a219")
+
+def is_authorized_request():
+    secret = os.environ.get("API_SECRET_KEY", "ff_sec_9a87d6e5c4b3a219")
+    req_key = (
+        request.headers.get("X-API-KEY") or 
+        request.headers.get("x-api-key") or 
+        request.args.get("api_key") or 
+        request.args.get("key")
+    )
+    return req_key == secret
+
+# =============================================
 # ACCOUNTS FOR JWT
 # =============================================
 
 BD_CREDS = {
-    "uid": "8388138124", 
-    "password": "GoharBD-q7DY342FY1Ofw5Za"
+    "uid": os.environ.get("BD_UID", "8388138124"), 
+    "password": os.environ.get("BD_PASSWORD", "GoharBD-q7DY342FY1Ofw5Za")
 }
 
 IND_CREDS = {
-    "uid": "8497971943", 
-    "password": "676635C7151DD04A27A0096591F27E4BBE5CD8762878E8C55110C1D847EF4176"
+    "uid": os.environ.get("IND_UID", "8497971943"), 
+    "password": os.environ.get("IND_PASSWORD", "676635C7151DD04A27A0096591F27E4BBE5CD8762878E8C55110C1D847EF4176")
 }
 
 BR_CREDS = {
-    "uid": "8388139122",
-    "password": "GoharBR-TCjGleaFyFKtJym8"
+    "uid": os.environ.get("BR_UID", "8388139122"),
+    "password": os.environ.get("BR_PASSWORD", "GoharBR-TCjGleaFyFKtJym8")
 }
 
 ACCOUNT_CREDENTIALS = {
@@ -404,6 +420,12 @@ def ts_to_bst(ts):
 
 @app.route('/info')
 def get_full_info():
+    if not is_authorized_request():
+        return jsonify({
+            "status": "error",
+            "message": "Unauthorized: Protected by Secure Store Key. Direct access denied."
+        }), 403
+
     uid = request.args.get('uid')
 
     if not uid:
@@ -548,6 +570,9 @@ def home():
 
 @app.route('/debug')
 def debug_test():
+    if not is_authorized_request():
+        return jsonify({"error": "Unauthorized"}), 403
+
     region = request.args.get('region', 'IND')
     uid = request.args.get('uid', '8497971943')
     force_refresh = request.args.get('refresh') == '1'
