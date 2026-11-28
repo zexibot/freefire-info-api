@@ -511,7 +511,7 @@ def home():
         "version": "OB55",
         "endpoint": "/info?uid=UID",
         "example": "/info?uid=2084018498",
-        "priority": "BD → IND → BR",
+        "priority": "IND → BD → BR",
         "credit": "@NAJMI_ADMIN_2"
     })
 
