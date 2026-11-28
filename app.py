@@ -146,10 +146,11 @@ async def get_jwt_token_from_api(region: str):
 # Token Getter (with cache)
 # =============================================
 
-async def get_token(region: str):
-    cached = _token_cache.get(region)
-    if cached and cached.get('expires_at', 0) > time.time():
-        return cached
+async def get_token(region: str, force_refresh: bool = False):
+    if not force_refresh:
+        cached = _token_cache.get(region)
+        if cached and cached.get('expires_at', 0) > time.time():
+            return cached
 
     # Try local generation first (fast and robust)
     token_info = await generate_token_backup(region)
@@ -296,9 +297,9 @@ async def get_access_token(account: str):
             await asyncio.sleep(1)
     return None, None
 
-async def GetAccountInformation(uid, region):
+async def GetAccountInformation(uid, region, is_retry: bool = False):
     try:
-        token_info = await get_token(region)
+        token_info = await get_token(region, force_refresh=is_retry)
         if not token_info:
             return None
 
@@ -323,6 +324,12 @@ async def GetAccountInformation(uid, region):
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(server_url.rstrip('/') + '/GetPlayerPersonalShow', content=data_enc, headers=headers)
+
+            if resp.status_code == 401 and not is_retry:
+                # Invalidate stale token and retry once with freshly generated token
+                _token_cache.pop(region, None)
+                _token_cache.pop(actual_region, None)
+                return await GetAccountInformation(uid, region, is_retry=True)
 
             if resp.status_code != 200:
                 return {"error_status": resp.status_code, "error_body": resp.text[:150]}
@@ -538,9 +545,13 @@ def home():
 def debug_test():
     region = request.args.get('region', 'IND')
     uid = request.args.get('uid', '8497971943')
+    force_refresh = request.args.get('refresh') == '1'
     logs = {}
-    
-    token_info = asyncio.run(get_token(region))
+
+    if force_refresh:
+        _token_cache.pop(region, None)
+
+    token_info = asyncio.run(get_token(region, force_refresh=force_refresh))
     if not token_info:
         logs['token'] = "Failed to obtain token"
     else:
@@ -548,15 +559,16 @@ def debug_test():
             'has_token': True,
             'region': token_info.get('region'),
             'server_url': token_info.get('server_url'),
+            'token_length': len(token_info.get('token', '')),
             'token_preview': token_info.get('token')[:35] + '...'
         }
-        
+
     try:
-        data = asyncio.run(GetAccountInformation(int(uid), region))
+        data = asyncio.run(GetAccountInformation(int(uid), region, is_retry=force_refresh))
         logs['account_result'] = data
     except Exception as e:
         logs['account_error'] = str(e)
-        
+
     return jsonify(logs)
 
 @app.route('/status')
